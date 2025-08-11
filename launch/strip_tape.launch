@@ -1,9 +1,0 @@
-<launch>  
-    <node name="striped_tape_w_sam" pkg="work_vision" type="striped_tape_w_sam.py" output="screen"/>
-    
-    <arg name="use_rviz" default="false"/>
-    <group if="$(arg use_rviz)">
-        <node name="rviz" pkg="rviz" type="rviz" args="-d $(find work_vision)/rviz/striped_tape.rviz"/>
-    </group>
-
-</launch>

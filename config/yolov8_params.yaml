@@ -1,5 +1,0 @@
-image_topic: /camera/color/image_raw
-recog_image_topic: /recog_imgs
-recog_info_topic: /recog_info
-threshold: 0.5
-model_file: yolov8n.pt
