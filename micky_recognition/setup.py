@@ -18,7 +18,7 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='Gabriel Torres',
+    maintainer='Gabrieltlt',
     maintainer_email='gabrieltlt721@gmail.com',
     description='TODO: Package description',
     license='TODO: License declaration',

@@ -50,7 +50,7 @@ source install/setup.bash
 
 ## Usage
 
-### Quick Start (All-in-One)
+### Quick Start
 ```bash
 # Launch camera + recognition + visualization
 ros2 launch micky_recognition tools_recognition.launch.py
