@@ -1,0 +1,32 @@
+tools_recognition:
+  ros__parameters:
+
+    # Detection threshold (confidence level)
+    threshold: 0.8
+
+    # YOLOv8 model file path
+    model_file: yolov8n.pt
+
+    # Start recognition automatically on node initialization
+    start_on_init: false
+
+    # Subscriber configuration
+    subscribers:
+      image_rgb:
+        topic: /camera/camera/color/image_raw
+        qos_profile: 10
+      
+    # Publisher configuration
+    publishers:
+      image:
+        topic: /micky_recognition/tools_recognition
+        qos_profile: 10
+      debug:
+        topic: /micky_recognition/tools_classes
+        qos_profile: 10
+
+    # Service configuration
+    services:
+      recognition:
+        start: /micky_recognition/recognition_start
+        stop: /micky_recognition/recognition_stop

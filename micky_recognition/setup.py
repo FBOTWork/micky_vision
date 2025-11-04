@@ -14,7 +14,7 @@ setup(
         (os.path.join('share', package_name, 'weights'), glob.glob('weights/*')),
         (os.path.join('share', package_name, 'config'), glob.glob('config/*.yaml')),
         (os.path.join('share', package_name, 'launch'), glob.glob('launch/*.launch.py')),
-        (os.path.join('share', package_name, 'config', 'rviz'), glob.glob('config/rviz/*.rviz')),
+        (os.path.join('share', package_name, 'config', 'rviz'), glob.glob('config/rviz/*')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -26,6 +26,7 @@ setup(
     entry_points={
         'console_scripts': [
             # 'reference_feature = micky_recognition.reference_feature:main',
+            'tools_recognition = micky_recognition.tools_recognition.tools_recognition:main',
         ],
     },
 )

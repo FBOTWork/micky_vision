@@ -3,9 +3,19 @@
 <package format="3">
   <name>micky_recognition</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>ROS2 package for tools recognition using YOLOv8 computer vision model</description>
   <maintainer email="gabrieltlt721@gmail.com">Gabriel Torres</maintainer>
-  <license>TODO: License declaration</license>
+  <license>MIT</license>
+
+  <!-- Python dependencies -->
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>vision_msgs</depend>
+  <depend>cv_bridge</depend>
+  <depend>python3-opencv</depend>
+  
+  <!-- Build dependencies -->
+  <buildtool_depend>ament_python</buildtool_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
