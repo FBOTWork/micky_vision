@@ -4,7 +4,7 @@
   <name>micky_recognition</name>
   <version>0.0.0</version>
   <description>TODO: Package description</description>
-  <maintainer email="gabrieltlt721@gmail.com">Gabriel Torres</maintainer>
+  <maintainer email="gabrieltlt721@gmail.com">Gabrietlt</maintainer>
   <license>TODO: License declaration</license>
 
   <test_depend>ament_copyright</test_depend>
