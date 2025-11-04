@@ -2,7 +2,7 @@ import os
 import glob
 from setuptools import find_packages, setup
 
-package_name = 'micky_vision'
+package_name = 'micky_recognition'
 
 setup(
     name=package_name,
@@ -18,14 +18,14 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='Gabriel',
+    maintainer='Gabriel Torres',
     maintainer_email='gabrieltlt721@gmail.com',
     description='TODO: Package description',
     license='TODO: License declaration',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            # 'reference_feature = micky_vision.reference_feature:main',
+            # 'reference_feature = micky_recognition.reference_feature:main',
         ],
     },
 )

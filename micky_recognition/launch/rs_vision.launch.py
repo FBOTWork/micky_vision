@@ -33,7 +33,7 @@ def generate_launch_description():
         executable="rviz2",
         name="rviz2",
         output="log",
-        arguments=["-d", os.path.join(get_package_share_directory('micky_vision'), 'config/rviz/reference.rviz')],
+        arguments=["-d", os.path.join(get_package_share_directory('micky_recognition'), 'config/rviz/reference.rviz')],
         condition=IfCondition(use_rviz),
     )
 
