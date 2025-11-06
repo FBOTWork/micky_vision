@@ -210,9 +210,9 @@ class ToolsRecognition(BaseRecognition):
         self.markerPublisher.publish(markers)
 
     def declareParameters(self) -> None:
-        self.declare_parameter("publishers.tools_classes.topic", "/micky_vision/tools_classes")
+        self.declare_parameter("publishers.tools_classes.topic", "/micky_vision/tools_recognition")
         self.declare_parameter("publishers.tools_classes.qos_profile", 1)
-        self.declare_parameter("publishers.tools_recognition.topic", "/micky_vision/tools_recognition")
+        self.declare_parameter("publishers.tools_recognition.topic", "/micky_vision/tools_classes")
         self.declare_parameter("publishers.tools_recognition.qos_profile", 1)
         self.declare_parameter("threshold", 0.5)
         self.declare_parameter("model_file", "yolov8n.pt")
