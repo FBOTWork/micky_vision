@@ -22,7 +22,6 @@ setup(
     maintainer_email='gabrieltlt721@gmail.com',
     description='TODO: Package description',
     license='TODO: License declaration',
-    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             # 'reference_feature = micky_recognition.reference_feature:main',
