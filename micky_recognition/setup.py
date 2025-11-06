@@ -26,6 +26,7 @@ setup(
         'console_scripts': [
             # 'reference_feature = micky_recognition.reference_feature:main',
             'tools_recognition = micky_recognition.tools_recognition.tools_recognition:main',
+            'base_recognition = micky_recognition.base_recognition.base_recognition_node:main',
         ],
     },
 )
