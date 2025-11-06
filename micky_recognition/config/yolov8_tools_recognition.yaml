@@ -10,23 +10,34 @@ tools_recognition:
     # Start recognition automatically on node initialization
     start_on_init: false
 
+    # 3D bounding box size limits (in meters)
+    max_sizes:
+        - [0.05, 0.05, 0.05]
+
     # Subscriber configuration
     subscribers:
-      image_rgb:
-        topic: /camera/camera/color/image_raw
-        qos_profile: 10
       
+      slop: 0.2 # meters
+      qos_profile: 10 # depth
+
+      image_rgb: /micky_vision/camera/color/image_raw
+      camera_info: /micky_vision/camera/color/camera_info
+      image_depth: /micky_vision/camera/aligned_depth_to_color/image_raw
+
     # Publisher configuration
     publishers:
-      image:
-        topic: /micky_recognition/tools_recognition
+
+      object_recognition:
+        topic: /micky_vision/tools_recognition
         qos_profile: 10
+
       debug:
-        topic: /micky_recognition/tools_classes
+        topic: /micky_vision/tools_classes
         qos_profile: 10
 
     # Service configuration
     services:
-      recognition:
-        start: /micky_recognition/recognition_start
-        stop: /micky_recognition/recognition_stop
+    
+      object_recognition:
+        start: /micky_vision/recognition_start
+        stop: /micky_vision/recognition_stop

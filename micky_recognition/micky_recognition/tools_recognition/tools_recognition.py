@@ -1,118 +1,76 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import copy
 import rclpy
-from rclpy.node import Node
-import cv2
+import numpy as np
+import torch
 from ultralytics import YOLO
-from std_msgs.msg import String
+from PIL import Image as IMG
+from image2world import BoundingBoxProcessingData, boundingBoxProcessing
+from std_msgs.msg import Header
 from std_srvs.srv import Empty
-from sensor_msgs.msg import Image
-from cv_bridge import CvBridge
+from builtin_interfaces.msg import Duration
+from sensor_msgs.msg import Image, CameraInfo
+from visualization_msgs.msg import Marker, MarkerArray
+from vision_msgs.msg import BoundingBox2D, BoundingBox3D
+from micky_recognition.base_recognition import BaseRecognition
+from micky_vision_msgs.msg import Detection3D, Detection3DArray
 from ament_index_python.packages import get_package_share_directory
 
-class ToolsRecognition(Node):
+class ToolsRecognition(BaseRecognition):
     def __init__(self) -> None:
-        super().__init__('tools_recognition')
+        super().__init__(nodeName='tools_recognition')
 
+        self.labels_dict: dict = {}
         self.model = None
         self.run = False
-        self.bridge = CvBridge()
-        
         self.declareParameters()
         self.readParameters()
         self.initRosComm()
-        
         if self.start_on_init:
             self._startRecognition()
 
-    def __del__(self):
-        """Destructor to ensure clean shutdown"""
-        try:
-            if hasattr(self, 'run') and self.run:
-                self._stopRecognition()
-        except:
-            pass
-
-    def destroy_node(self):
-        """Override destroy_node to ensure clean shutdown"""
-        try:
-            if hasattr(self, 'run') and self.run:
-                self._stopRecognition()
-        except:
-            pass
-        super().destroy_node()
-
     def initRosComm(self) -> None:
-        """Initialize ROS2 communication"""
-        # Publishers
-        self.imagePublisher = self.create_publisher(
-            Image, self.imagePublisherTopic, qos_profile=self.imageQosProfile)
-        self.debugPublisher = self.create_publisher(
-            String, self.debugPublisherTopic, qos_profile=self.debugQosProfile)
-        
-        # Services
-        self.recognitionStartService = self.create_service(
-            Empty, self.startRecognitionTopic, self.startRecognition)
-        self.recognitionStopService = self.create_service(
-            Empty, self.stopRecognitionTopic, self.stopRecognition)
-        
-        # Subscription
-        self.imageSubscription = self.create_subscription(
-            Image, self.imageSubscriberTopic, self.imageCallback, 
-            qos_profile=self.imageSubscriberQosProfile)
+        # use QoS attributes populated by readParameters()
+        self.debugPublisher = self.create_publisher(Image, self.debugImageTopic, qos_profile=self.tools_classesQosProfile)
+        self.markerPublisher = self.create_publisher(MarkerArray, 'micky_vision/object_markers', qos_profile=self.tools_classesQosProfile)
+        self.objectRecognitionPublisher = self.create_publisher(Detection3DArray, self.objectRecognitionTopic, qos_profile=self.objectRecognitionQosProfile)
+        self.recognitionStartService = self.create_service(Empty, self.startRecognitionTopic, self.startRecognition)
+        self.recognitionStopService = self.create_service(Empty, self.stopRecognitionTopic, self.stopRecognition)
+        super().initRosComm(callbackObject=self)
 
-    def loadModel(self) -> None:
-        """Load YOLO model"""
+    def loadModel(self) -> None: 
         self.get_logger().info("=> Loading model")
-        try:
-            self.model = YOLO(self.modelFile)
-            self.model.conf = self.threshold
-            self.get_logger().info("=> Model loaded successfully")
-        except Exception as e:
-            self.get_logger().error(f"Failed to load model: {e}")
-            self.model = None
+        self.model = YOLO(self.modelFile)
+        self.model.conf = self.threshold
+        self.get_logger().info("=> Loaded")
 
     def unloadModel(self) -> None:
-        """Unload YOLO model and free memory"""
-        if self.model is not None:
-            del self.model
-            self.model = None
-        self.get_logger().info("=> Model unloaded")
+        del self.model
+        torch.cuda.empty_cache()
+        self.model = None
 
     def _startRecognition(self):
-        """Internal method to start recognition"""
         self.loadModel()
-        if self.model is not None:
-            self.run = True
-            self.get_logger().info("Starting Object Recognition!!!")
-        else:
-            self.get_logger().error("Cannot start recognition - model loading failed")
+        self.run = True
+        self.get_logger().info("Starting Object Recognition!!!")
 
     def _stopRecognition(self):
-        """Internal method to stop recognition"""
         self.run = False
         self.unloadModel()
         self.get_logger().info("Stopping Object Recognition!!!")
 
     def startRecognition(self, req: Empty.Request, resp: Empty.Response):
-        """Service callback to start recognition"""
         self._startRecognition()
         return resp
 
     def stopRecognition(self, req: Empty.Request, resp: Empty.Response):
-        """Service callback to stop recognition"""
         self._stopRecognition()
         return resp
 
-    def getClassName(self, classId: int) -> str:
-        """Get human-readable class name from class ID using model's class names"""
-        if self.model is not None and classId in self.model.names:
-            return self.model.names[classId]
-        return f"class_{classId}"
+    def callback(self, depthMsg: Image, imageMsg: Image, cameraInfoMsg: CameraInfo) -> None:
 
-    def imageCallback(self, imageMsg: Image) -> None:
-        """Main callback for processing images"""
         if not self.run:
             return
         
@@ -120,146 +78,170 @@ class ToolsRecognition(Node):
             self.get_logger().error("Model is not loaded.")
             return
 
-        if imageMsg is None:
-            self.get_logger().error("Input image message is invalid.")
+        if imageMsg is None or depthMsg is None or cameraInfoMsg is None:
+            self.get_logger().error("One or more input messages are invalid.")
             return
         
-        try:
-            # Convert ROS image to OpenCV format
-            cvImage = self.bridge.imgmsg_to_cv2(imageMsg, desired_encoding='bgr8')
-        except Exception as e:
-            self.get_logger().error(f"Failed to convert image: {e}")
-            return
+        cvImage = self.cvBridge.imgmsg_to_cv2(imageMsg,desired_encoding='bgr8')
+        results = self.model(cvImage)
 
-        try:
-            # Run YOLO inference
-            results = self.model(cvImage, verbose=False)
-            if not results or len(results) == 0:
-                return
-                
-            result = results[0]
-        except Exception as e:
-            self.get_logger().error(f"YOLO inference failed: {e}")
-            return
+        detectionHeader = imageMsg.header
 
-        # Process detections
-        detectedClasses = []
-        
-        if result.boxes is not None and len(result.boxes) > 0:
-            for box in result.boxes:
+        detection3DArray = Detection3DArray()
+        detection3DArray.header = detectionHeader
+        detection3DArray.image_rgb = imageMsg
+
+        if len(results[0].boxes):
+            for box in results[0].boxes: 
+
                 if box is None:
-                    continue
+                    return None
                 
-                conf = float(box.conf)
-                cls = int(box.cls)
+                classId = int(box.cls)
+                
+                label = results[0].names[classId]
+                score = float(box.conf)
 
-                if conf < self.threshold:
+                bb2d = BoundingBox2D()
+                data = BoundingBoxProcessingData()
+                data.sensor.setSensorData(cameraInfoMsg, depthMsg)
+
+                centerX, centerY, sizeX, sizeY = map(float, box.xywh[0])
+
+                data.boundingBox2D.center.position.x = centerX
+                data.boundingBox2D.center.position.y = centerY
+                data.boundingBox2D.size_x = sizeX
+                data.boundingBox2D.size_y = sizeY
+                data.maxSize.x = self.maxSizes[0]
+                data.maxSize.y = self.maxSizes[1]
+                data.maxSize.z = self.maxSizes[2]
+
+                bb2d = data.boundingBox2D
+        
+                try:
+                    bb3d = boundingBoxProcessing(data)
+                except Exception as e:
+                    self.get_logger().error(f"Error processing bounding box: {e}")
                     continue
 
-                # Get bounding box coordinates
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                if np.linalg.norm([bb3d.center.position.x,bb3d.center.position.y,bb3d.center.position.z]) < 0.05:
+                    continue   
                 
-                # Get class name and percentage
-                className = self.getClassName(cls)
-                percentage = conf * 100
-                detectedClasses.append(f"{className}: {percentage:.1f}%")
+                detection3d = self.createDetection3d(bb2d, bb3d, score, detectionHeader, label)
+                if detection3d is not None:
+                    detection3DArray.detections.append(detection3d)
+                    
+        self.objectRecognitionPublisher.publish(detection3DArray)
+        self.labels_dict.clear()
 
-                # Draw bounding box and label on image
-                cv2.rectangle(cvImage, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(cvImage, f"{className} {percentage:.1f}%", (x1, y1 - 5),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        imageArray = results[0].plot()
+        image = IMG.fromarray(imageArray[..., ::-1])
+        debugImageMsg = self.cvBridge.cv2_to_imgmsg(np.array(image), encoding='rgb8')
+        self.debugPublisher.publish(debugImageMsg)
 
-        # Publish processed image with bounding boxes
-        try:
-            imageMsg_out = self.bridge.cv2_to_imgmsg(cvImage, "bgr8")
-            imageMsg_out.header = imageMsg.header
-            self.imagePublisher.publish(imageMsg_out)
-        except Exception as e:
-            self.get_logger().error(f"Failed to publish image: {e}")
+        self.publishMarkers(detection3DArray.detections)
 
-        # Publish detected classes as text
-        classesMsg = String()
-        if detectedClasses:
-            classesMsg.data = " | ".join(detectedClasses)
+    def createDetection3d(self, bb2d: BoundingBox2D, bb3d: BoundingBox3D , score: float, detectionHeader: Header, label: str) -> Detection3D:
+        detection3d = Detection3D()
+        detection3d.header = detectionHeader
+        detection3d.score = score
+
+        if '-' in label:
+            detection3d.label = label
         else:
-            classesMsg.data = "No objects detected"
-        self.debugPublisher.publish(classesMsg)
+            detection3d.label = f"none-{label}" if label[0].islower() else f"None-{label}"
+
+        if detection3d.label in self.labels_dict:
+            self.labels_dict[detection3d.label] += 1
+        else:
+            self.labels_dict[detection3d.label] = 1
+            
+        detection3d.id = self.labels_dict[detection3d.label]
+
+        detection3d.bbox2d = copy.deepcopy(bb2d)
+        detection3d.bbox3d = bb3d
+
+        return detection3d
+
+
+    def publishMarkers(self, descriptions3d) -> None:
+        markers = MarkerArray()
+        duration = Duration()
+        duration.sec = 2
+        color = np.asarray([255, 0, 0])/255.0
+        for i, det in enumerate(descriptions3d):
+            name = det.label
+
+            # cube marker
+            marker = Marker()
+            marker.header = det.header
+            marker.action = Marker.ADD
+            marker.pose = det.bbox3d.center
+            marker.color.r = color[0]
+            marker.color.g = color[1]
+            marker.color.b = color[2]
+            marker.color.a = 0.4
+            marker.ns = "bboxes"
+            marker.id = i
+            marker.type = Marker.CUBE
+            marker.scale = det.bbox3d.size
+            marker.lifetime = duration
+            markers.markers.append(marker)
+
+            # text marker
+            marker = Marker()
+            marker.header = det.header
+            marker.action = Marker.ADD
+            marker.pose = det.bbox3d.center
+            marker.color.r = color[0]
+            marker.color.g = color[1]
+            marker.color.b = color[2]
+            marker.color.a = 1.0
+            marker.id = i
+            marker.ns = "texts"
+            marker.type = Marker.TEXT_VIEW_FACING
+            marker.scale.x = 0.05
+            marker.scale.y = 0.05
+            marker.scale.z = 0.05
+            marker.text = '{} ({:.2f})'.format(name, det.score)
+            marker.lifetime = duration
+            markers.markers.append(marker)
+        
+        self.markerPublisher.publish(markers)
 
     def declareParameters(self) -> None:
-        """Declare all ROS2 parameters"""
-        # Publisher parameters
-        self.declare_parameter("publishers.image.topic", "/micky_recognition/tools_recognition")
-        self.declare_parameter("publishers.image.qos_profile", 10)
-        self.declare_parameter("publishers.debug.topic", "/micky_recognition/tools_classes")
-        self.declare_parameter("publishers.debug.qos_profile", 10)
-        
-        # Subscriber parameters
-        self.declare_parameter("subscribers.image_rgb.topic", "camera/camera/color/image_raw")
-        self.declare_parameter("subscribers.image_rgb.qos_profile", 10)
-        
-        # Service parameters
-        self.declare_parameter("services.recognition.start", "/micky_recognition/recognition_start")
-        self.declare_parameter("services.recognition.stop", "/micky_recognition/recognition_stop")
-        
-        # Algorithm parameters (values come from YAML config file)
-        self.declare_parameter("threshold", 0.5)  # Default fallback - YAML will override
-        self.declare_parameter("model_file", "yolov8n.pt")  # Default fallback - YAML will override  
-        self.declare_parameter("start_on_init", True)  # Default fallback - YAML will override
+        self.declare_parameter("publishers.tools_classes.topic", "/micky_vision/tools_classes")
+        self.declare_parameter("publishers.tools_classes.qos_profile", 1)
+        self.declare_parameter("publishers.tools_recognition.topic", "/micky_vision/tools_recognition")
+        self.declare_parameter("publishers.tools_recognition.qos_profile", 1)
+        self.declare_parameter("threshold", 0.5)
+        self.declare_parameter("model_file", "yolov8n.pt")
+        self.declare_parameter("max_sizes", [0.05, 0.05, 0.05])
+        self.declare_parameter("start_on_init", True)
+        self.declare_parameter("services.tools_recognition.start", "/micky_vision/recognition_start")
+        self.declare_parameter("services.tools_recognition.stop", "/micky_vision/recognition_stop")
+        super().declareParameters()
 
     def readParameters(self) -> None:
-        """Read all ROS2 parameters"""
-        # Publisher parameters
-        self.imagePublisherTopic = self.get_parameter("publishers.image.topic").value
-        self.imageQosProfile = self.get_parameter("publishers.image.qos_profile").value
-        self.debugPublisherTopic = self.get_parameter("publishers.debug.topic").value
-        self.debugQosProfile = self.get_parameter("publishers.debug.qos_profile").value
-        
-        # Subscriber parameters
-        self.imageSubscriberTopic = self.get_parameter("subscribers.image_rgb.topic").value
-        self.imageSubscriberQosProfile = self.get_parameter("subscribers.image_rgb.qos_profile").value
-        
-        # Service parameters
-        self.startRecognitionTopic = self.get_parameter("services.recognition.start").value
-        self.stopRecognitionTopic = self.get_parameter("services.recognition.stop").value
-        
-        # Algorithm parameters
+        self.debugImageTopic = self.get_parameter("publishers.tools_classes.topic").value
+        self.tools_classesQosProfile = self.get_parameter("publishers.tools_classes.qos_profile").value
+        self.objectRecognitionTopic = self.get_parameter("publishers.tools_recognition.topic").value
+        self.objectRecognitionQosProfile = self.get_parameter("publishers.tools_recognition.qos_profile").value
         self.threshold = self.get_parameter("threshold").value
-        self.start_on_init = self.get_parameter("start_on_init").value
-        
-        # Model file path
-        modelFileName = self.get_parameter("model_file").value
-        try:
-            packageShareDirectory = get_package_share_directory('micky_recognition')
-            self.modelFile = f"{packageShareDirectory}/weights/{modelFileName}"
-        except Exception:
-            self.modelFile = f"weights/{modelFileName}"
-            self.get_logger().warn(f"Using relative path for model: {self.modelFile}")
-        
-        # Log important parameters
         self.get_logger().info(f"Threshold: {self.threshold}")
-        self.get_logger().info(f"Model file: {self.modelFile}")
-        self.get_logger().info(f"Start on init: {self.start_on_init}")
-        self.get_logger().info(f"Image topic: {self.imageSubscriberTopic}")
-        self.get_logger().info(f"Output image topic: {self.imagePublisherTopic}")
-        self.get_logger().info(f"Debug topic: {self.debugPublisherTopic}")
+        self.start_on_init = self.get_parameter("start_on_init").value
+        self.modelFile = get_package_share_directory('micky_recognition') + "/weights/" + self.get_parameter("model_file").value
+        self.maxSizes = self.get_parameter("max_sizes").value
+        self.startRecognitionTopic = self.get_parameter("services.tools_recognition.start").value
+        self.stopRecognitionTopic = self.get_parameter("services.tools_recognition.stop").value
+        super().readParameters()
 
 def main(args=None):
     rclpy.init(args=args)
-    node = None
-    
-    try:
-        node = ToolsRecognition()
-        print("Tools Recognition started. Press Ctrl+C to stop.")
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        print("\n[INFO] Tools Recognition shutdown requested (Ctrl+C)")
-    except Exception as e:
-        print(f"\n[ERROR] Unexpected error: {e}")
-    finally:
-        if node is not None:
-            node.destroy_node()
-        rclpy.shutdown()
-        print("[INFO] Tools Recognition stopped cleanly.")
+    node = ToolsRecognition()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

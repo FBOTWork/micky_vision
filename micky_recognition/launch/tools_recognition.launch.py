@@ -2,81 +2,65 @@
 # -*- coding: utf-8 -*-
 
 from launch import LaunchDescription
+from launch.conditions import IfCondition, UnlessCondition
 from launch_ros.actions import Node
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
-from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
-from launch.conditions import IfCondition
+from launch.actions import IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from ament_index_python.packages import get_package_share_directory
 from launch_ros.substitutions import FindPackageShare
+import os
 
 def generate_launch_description():
-    # Declare launch arguments (only for launch behavior control)
-    use_camera_arg = DeclareLaunchArgument(
-        'use_camera',
-        default_value='true',
-        description='Whether to launch USB camera'
+
+    config_file_path = PathJoinSubstitution([
+        get_package_share_directory('micky_recognition'),
+        'config',
+        'yolov8_tools_recognition.yaml']
     )
+
+    declared_arguments = []
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            'config_object_recognition',
+            default_value=config_file_path,
+            description='Path to the parameter file'
+        ))
     
-    use_rviz_arg = DeclareLaunchArgument(
-        'use_rviz',
-        default_value='true',
-        description='Whether to launch RViz for visualization'
-    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            'use_realsense',
+            default_value='true',
+            description="If it should run the realsense node"
+        ))
 
-    config_file_arg = DeclareLaunchArgument(
-        'config_file',
-        default_value=PathJoinSubstitution([
-            FindPackageShare('micky_recognition'),
-            'config',
-            'yolov8_tools_recognition.yaml'
-        ]),
-        description='Path to config file'
-    )
-
-    # RealSense Camera Launch
-    camera_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            PathJoinSubstitution([
-                FindPackageShare('realsense2_camera'),
-                'launch', 
-                'rs_launch.py'
-            ])
-        ]),
-        condition=IfCondition(LaunchConfiguration('use_camera'))
-    )
-
-    # Tools Recognition Node
     tools_recognition_node = Node(
         package='micky_recognition',
         executable='tools_recognition',
         name='tools_recognition',
-        parameters=[
-            LaunchConfiguration('config_file'),
-        ],
-        output='screen',
-        emulate_tty=False,
+        parameters=[LaunchConfiguration('config_object_recognition'),],
     )
 
-    # RViz Node
-    rviz_node = Node(
-        package='rviz2',
-        executable='rviz2',
-        name='rviz2',
-        arguments=['-d', PathJoinSubstitution([
-            FindPackageShare('micky_recognition'),
-            'rviz',
-            'tools_recognition.rviz'
-        ])],
-        condition=IfCondition(LaunchConfiguration('use_rviz')),
-        output='screen',
-        emulate_tty=False,
+    realsense2_node = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(get_package_share_directory('realsense2_camera'), 'launch', 'rs_launch.py')
+        ),
+        launch_arguments={
+            'camera_name': 'camera',
+            'camera_namespace': 'micky_vision',
+            'enable_rgbd': 'true',
+            'enable_sync': 'true',
+            'align_depth.enable': 'true',
+            'enable_color': 'true',
+            'enable_depth': 'true',
+            'pointcloud.enable': 'true'
+        }.items(),
+        condition=IfCondition(LaunchConfiguration('use_realsense'))
     )
 
     return LaunchDescription([
-        use_camera_arg,
-        use_rviz_arg,
-        config_file_arg,
-        camera_launch,
+        *declared_arguments,
         tools_recognition_node,
-        rviz_node,
+        realsense2_node
     ])
